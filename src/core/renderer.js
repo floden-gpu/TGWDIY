@@ -387,14 +387,15 @@ export function assetsReady() {
 
 export async function loadFonts() {
   if (typeof document === "undefined" || !document.fonts) return;
+  // 全部使用子集化 WOFF2，体积约为原 TTF 的 5-30%
   const defs = [
-    { family: FONT.black, url: `${A}/fonts/Roboto-Black.ttf` },
-    { family: FONT.demi, url: `${A}/fonts/FranklinGothic-DemiCond.ttf` },
-    { family: FONT.medium, url: `${A}/fonts/FranklinGothic-MediumCond.ttf` },
-    { family: FONT.stencil, url: `${A}/fonts/DDayStencil-Regular.ttf` },
-    { family: FONT.cost, url: `${A}/fonts/STHUPO.TTF` },
-    { family: FONT.cnBold, url: `${A}/fonts/STKAITI.TTF` },
-    { family: FONT.stat, url: `${A}/fonts/STLITI.TTF` },
+    { family: FONT.black, url: `${A}/fonts/subset/Roboto-Black.woff2` },
+    { family: FONT.demi, url: `${A}/fonts/subset/FranklinGothic-DemiCond.woff2` },
+    { family: FONT.medium, url: `${A}/fonts/subset/FranklinGothic-MediumCond.woff2` },
+    { family: FONT.stencil, url: `${A}/fonts/subset/DDayStencil-Regular.woff2` },
+    { family: FONT.cost, url: `${A}/fonts/subset/STHUPO.woff2` },
+    { family: FONT.cnBold, url: `${A}/fonts/subset/STKAITI.woff2` },
+    { family: FONT.stat, url: `${A}/fonts/subset/STLITI.woff2` },
   ];
   await Promise.all(
     defs.map(async (d) => {
@@ -402,8 +403,8 @@ export async function loadFonts() {
         const face = new FontFace(d.family, `url("${d.url}")`);
         await face.load();
         document.fonts.add(face);
-      } catch {
-        /* 缺失时回退系统字体 */
+      } catch (e) {
+        console.warn("字体加载失败:", d.family, e);
       }
     })
   );
