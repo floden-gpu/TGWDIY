@@ -5,7 +5,7 @@
 //   1. 模板本身
 //   2. 原画（塞进模板的透明原画窗）
 //   3. 文字：费用、卡名、攻防、词条、描述
-import { BOLD_MARKS } from "./constants";
+import { BOLD_MARKS, NAME_BAR_COLORS } from "./constants";
 import { resolveKeywords } from "./cardModel";
 
 export const MAIN_W = 500;
@@ -19,8 +19,11 @@ const LH = 700;
 const A = "./assets";
 
 // ---------------------------------------------------------------- 素材
-const FRAME = `${A}/card/frame.png`;
-// 模板自带的盾牌图（用作国旗裁剪蒙版，保证形状与模板完全一致）
+// 单位卡（步兵）模板
+const FRAME_UNIT = `${A}/card/frame.png`;
+// 指令卡模板（用户提供的「卡图3」）
+const FRAME_ORDER = `${A}/card/order.png`;
+// 模板自带的盾牌图（备用的国旗裁剪蒙版）
 const SHIELD_MASK = `${A}/card/shield_blank.png`;
 
 function shieldMaskImg() {
@@ -48,6 +51,22 @@ export const LAYOUT = {
   rarityMarkY: 616,
   // 卡名条下方：描述文字区
   textZone: { x: 14, y: 604, w: 356, h: 84 },
+};
+
+// 指令卡版式（由 order.png 677x944 实测换算到 500x700）
+// 与单位卡共用同一套绘制流程，只是坐标不同、无左右数值板与托条
+const ORDER_LAYOUT = {
+  art: { x: 8.1, y: 75.6, w: 484.5, h: 427.1 },
+  cost: { cx: 62.8, cy: 110.5 },
+  flagInner: { x: 396.0, y: 42.0, w: 72.0, h: 112.0 },
+  // 只有中央旗子板，不画攻防数字
+  plateC: { x: 215.7, y: 443.4, w: 72.4, h: 72.7, cx: 251.8, cy: 479.8 },
+  nameBar: { x: 7.4, y: 528.0, w: 363.4, h: 51.9, cx: 189.1, cy: 553.9 },
+  keyword: { cx: 435, cy: 576, w: 118, h: 48.5 },
+  rarityMarkY: 600,
+  textZone: { x: 14, y: 586, w: 356, h: 84 },
+  // 指令卡自带旗子图标，不再叠加兵种图标
+  hasBuiltinIcon: true,
 };
 
 const C = {
@@ -350,7 +369,8 @@ function shieldPath(ctx, x, y, w, h) {
 // ---------------------------------------------------------------- 图片
 
 export const artworkCache = new Map();
-const templateCache = { img: null, shield: null };
+// 两张模板分别缓存：unit（步兵）/ order（指令）
+const templateCache = { unit: null, order: null, shield: null };
 
 function loadImage(src) {
   return new Promise((resolve) => {
@@ -368,18 +388,20 @@ export function cacheArtwork(url) {
   });
 }
 
-// 预载卡框模板与盾牌蒙版
+// 预载卡框模板与盾牌蒙版（加载失败的记为 null，不阻塞渲染）
 export async function preloadAssets() {
-  if (!templateCache.img) {
-    templateCache.img = await loadImage(FRAME);
-  }
-  if (!templateCache.shield) {
-    templateCache.shield = await loadImage(SHIELD_MASK);
-  }
+  const jobs = [];
+  if (!templateCache.unit) jobs.push(loadImage(FRAME_UNIT).then((i) => { templateCache.unit = i || false; }));
+  if (!templateCache.order) jobs.push(loadImage(FRAME_ORDER).then((i) => { templateCache.order = i || false; }));
+  if (!templateCache.shield) jobs.push(loadImage(SHIELD_MASK).then((i) => { templateCache.shield = i || false; }));
+  await Promise.all(jobs);
 }
 
+// 单位模板可用即视为就绪；若加载失败（false）也视为就绪，避免永久空白
 export function assetsReady() {
-  return !!(templateCache.img && templateCache.img.complete && templateCache.img.naturalWidth);
+  const u = templateCache.unit;
+  if (u === false) return true;
+  return !!(u && u.complete && u.naturalWidth);
 }
 
 export async function loadFonts() {
@@ -470,7 +492,7 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
   }
 
   // ── 4. 叠加卡框模板（透明洞处透出原画与国旗）
-  const tpl = templateCache.img;
+  const tpl = templateCache[isOrder ? "order" : "unit"];
   if (tpl && tpl.complete && tpl.naturalWidth) {
     ctx.drawImage(tpl, 0, 0, LW, LH);
   }
@@ -523,7 +545,8 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
     ctx.font = `700 ${size}px ${FONT.cnBold}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = ap.nameColor || C.nameText;
+    const nameColor = NAME_BAR_COLORS[data.nation] || C.nameText;
+    ctx.fillStyle = ap.nameColor || nameColor;
     ctx.fillText(data.nameZh, nb.cx + (ap.nameX || 0), nb.cy + (ap.nameY || 0));
   }
 

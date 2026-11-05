@@ -51,6 +51,14 @@ export const NATION_ARMY_HEX = {
   uk: "#7f9cc0", fr: "#6a90b8", de: "#8a6a4a", soviet: "#9c4a3a",
 };
 
+// 卡名条颜色（按国家）
+export const NAME_BAR_COLORS = {
+  uk: "#4a7c3a",   // 英国 - 军绿
+  fr: "#2a5a9e",   // 法国 - 蓝
+  de: "#2a2a2a",   // 德国 - 黑灰
+  soviet: "#3d7a2f", // 俄国 - 草绿
+};
+
 export const FACTION_LABEL = {
   uk: "英国", fr: "法国", de: "德国", soviet: "俄国",
 };
