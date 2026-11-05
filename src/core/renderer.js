@@ -21,8 +21,6 @@ const A = "./assets";
 // ---------------------------------------------------------------- 素材
 // 单位卡（步兵）模板
 const FRAME_UNIT = `${A}/card/frame.png`;
-// 指令卡模板（用户提供的「卡图3」）
-const FRAME_ORDER = `${A}/card/order.png`;
 // 模板自带的盾牌图（备用的国旗裁剪蒙版）
 const SHIELD_MASK = `${A}/card/shield_blank.png`;
 
@@ -51,30 +49,6 @@ export const LAYOUT = {
   rarityMarkY: 616,
   // 卡名条下方：描述文字区
   textZone: { x: 14, y: 604, w: 356, h: 84 },
-};
-
-// 指令卡版式（由新 order.png 1296x1808 逐像素实测换算到 500x700）
-const ORDER_LAYOUT = {
-  // 原画窗：实测 x8.1 y46.8 w484.6 h456.1
-  art: { x: 8.1, y: 46.8, w: 484.6, h: 456.1 },
-  // 费用盾：深色板 y53.4..150.7，中心 (62.9, 110.7)
-  cost: { cx: 62.9, cy: 110.7 },
-  // 国旗盾透明内区：实测 x401.2 y47.2 w70.2 h109.2
-  flagInner: { x: 401.2, y: 47.2, w: 70.2, h: 109.2 },
-  // 中央旗子板（模板自带图标）：中心 (252.3, 480.1)
-  plateC: { x: 215.3, y: 443.7, w: 74.1, h: 72.8, cx: 252.3, cy: 480.1 },
-  // 底部卡名条：实测 x7.7 y528.1 w363.4 h51.9
-  nameBar: { x: 7.7, y: 528.1, w: 363.4, h: 51.9, cx: 189.4, cy: 554.0 },
-  // 竖分隔线：x372，从卡名条顶部到底边
-  divider: { x: 372, y: 528 },
-  // 卡名条右侧：词条区（分隔线右侧，与卡名条同水平带）
-  keyword: { cx: 434, cy: 554.0, w: 112, h: 51.9 },
-  // 稀有度形状：压在词条下方
-  rarityMarkY: 588,
-  // 卡名条下方：描述文字区
-  textZone: { x: 16, y: 592, w: 352, h: 88 },
-  // 指令卡自带旗子图标，不再叠加兵种图标
-  hasBuiltinIcon: true,
 };
 
 const C = {
@@ -377,8 +351,8 @@ function shieldPath(ctx, x, y, w, h) {
 // ---------------------------------------------------------------- 图片
 
 export const artworkCache = new Map();
-// 两张模板分别缓存：unit（步兵）/ order（指令）
-const templateCache = { unit: null, order: null, shield: null };
+// 模板缓存：unit（步兵）
+const templateCache = { unit: null, shield: null };
 
 function loadImage(src) {
   return new Promise((resolve) => {
@@ -396,11 +370,10 @@ export function cacheArtwork(url) {
   });
 }
 
-// 预载卡框模板与盾牌蒙版（加载失败的记为 null，不阻塞渲染）
+// 预载卡框模板与盾牌蒙版（加载失败的记为 false，不阻塞渲染）
 export async function preloadAssets() {
   const jobs = [];
   if (!templateCache.unit) jobs.push(loadImage(FRAME_UNIT).then((i) => { templateCache.unit = i || false; }));
-  if (!templateCache.order) jobs.push(loadImage(FRAME_ORDER).then((i) => { templateCache.order = i || false; }));
   if (!templateCache.shield) jobs.push(loadImage(SHIELD_MASK).then((i) => { templateCache.shield = i || false; }));
   await Promise.all(jobs);
 }
@@ -474,9 +447,6 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
   const s = W / LW;
   const L = LAYOUT;
 
-  const isOrder = data.type === "order";
-  const isUnit = !isOrder;
-
   ctx.clearRect(0, 0, W, H);
   ctx.save();
   ctx.scale(s, s);
@@ -500,7 +470,7 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
   }
 
   // ── 4. 叠加卡框模板（透明洞处透出原画与国旗）
-  const tpl = templateCache[isOrder ? "order" : "unit"];
+  const tpl = templateCache.unit;
   if (tpl && tpl.complete && tpl.naturalWidth) {
     ctx.drawImage(tpl, 0, 0, LW, LH);
   }
@@ -563,7 +533,7 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
   const OPT_X = -2;
   const OPT_Y = -1;
 
-  if (isUnit) {
+  {
     const pl = L.plateL;
     const atk = String(data.attack ?? "");
     if (atk !== "") {
