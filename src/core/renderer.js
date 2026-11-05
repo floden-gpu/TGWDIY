@@ -1,0 +1,650 @@
+// 卡面渲染引擎：直接使用用户提供的卡框模板图，仅叠加原画与文字。
+//
+// 模板：public/assets/card/frame.png（1035x1386，含卡框、盾牌、数值板、钢盔、卡名条）
+// 只画两样东西：
+//   1. 模板本身
+//   2. 原画（塞进模板的透明原画窗）
+//   3. 文字：费用、卡名、攻防、词条、描述
+import { BOLD_MARKS } from "./constants";
+import { resolveKeywords } from "./cardModel";
+
+export const MAIN_W = 500;
+export const MAIN_H = 700;
+export const MINI_W = 250;
+export const MINI_H = 350;
+
+const LW = 500;
+const LH = 700;
+
+const A = "./assets";
+
+// ---------------------------------------------------------------- 素材
+const FRAME = `${A}/card/frame.png`;
+// 模板自带的盾牌图（用作国旗裁剪蒙版，保证形状与模板完全一致）
+const SHIELD_MASK = `${A}/card/shield_blank.png`;
+
+function shieldMaskImg() {
+  return templateCache.shield;
+}
+
+// ---------------------------------------------------------------- 版式
+// 全部由 frame.png（1035x1386）实测换算到 500x700
+export const LAYOUT = {
+  // 原画窗（模板透明区）
+  art: { x: 8.7, y: 45.5, w: 481.2, h: 468.1 },
+  // 费用盾内部绘制区
+  cost: { cx: 59.4, cy: 108 },
+  // 国旗盾透明内区（模板盾牌内部 alpha=0，国旗画在此处，模板描边会盖在上面）
+  flagInner: { x: 400.8, y: 45.5, w: 69.8, h: 111.1 },
+  // 三格数值板（中心点）
+  plateL: { x: 29.0, y: 451.5, w: 75.4, h: 72.7, cx: 66.7, cy: 487.9 },
+  plateC: { x: 213.0, y: 454.5, w: 75.4, h: 77.3, cx: 250.7, cy: 493.2 },
+  plateR: { x: 395.7, y: 451.5, w: 73.9, h: 72.7, cx: 432.7, cy: 487.9 },
+  // 底部卡名条（模板自带深色胶囊）
+  nameBar: { x: 10.1, y: 550.0, w: 359.4, h: 48.5, cx: 189.8, cy: 574.2 },
+  // 卡名条右侧：词条区（词条与稀有度叠在同一位置）
+  keyword: { cx: 431, cy: 592, w: 118, h: 48.5 },
+  // 稀有度形状标记：与词条同一中心，被词条部分遮挡
+  rarityMarkY: 616,
+  // 卡名条下方：描述文字区
+  textZone: { x: 14, y: 604, w: 356, h: 84 },
+};
+
+const C = {
+  costNum: "#f2eee1",
+  costOp: "#dfa832",
+  nameText: "#f2eee1",
+  statText: "#f2eee1",
+  effectText: "#33332e",
+  keywordText: "#2e2e2a",
+  rarityMark: "#6f6f68",
+};
+
+export const FONT = {
+  black: "KD-Roboto-Black",
+  demi: "KD-Franklin-Demi",
+  medium: "KD-Franklin-Medium",
+  stencil: "KD-DDayStencil",
+  cost: "KD-Hupo",
+  cnBold: "KD-Kaiti",
+  cnNormal: "KD-Kaiti",
+  stat: "KD-Liti",
+};
+
+// ---------------------------------------------------------------- 工具
+
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function fitSize(ctx, text, maxWidth, maxSize, minSize, family, weight = 700) {
+  let size = maxSize;
+  while (size > minSize) {
+    ctx.font = `${weight} ${size}px ${family}`;
+    if (ctx.measureText(text).width <= maxWidth) break;
+    size -= 1;
+  }
+  return Math.max(minSize, size);
+}
+
+// ---------------------------------------------------------------- 富文本
+
+export function parseRich(text) {
+  if (!text) return [{ t: "", b: false }];
+  const runs = [];
+  let i = 0;
+  let buf = "";
+  let bold = false;
+  const flush = () => {
+    if (buf.length) runs.push({ t: buf, b: bold });
+    buf = "";
+  };
+  while (i < text.length) {
+    const two = text.slice(i, i + 2);
+    if (BOLD_MARKS.some((m) => two === m)) {
+      flush();
+      bold = !bold;
+      i += 2;
+      continue;
+    }
+    buf += text[i];
+    i++;
+  }
+  flush();
+  if (!runs.length) runs.push({ t: "", b: false });
+  return runs;
+}
+
+function layoutRich(ctx, runs, size, maxWidth) {
+  const chars = [];
+  for (const r of runs) for (const ch of r.t) chars.push({ ch, b: r.b });
+  const lines = [[]];
+  let curX = 0;
+  for (const c of chars) {
+    if (c.ch === "\n") {
+      lines.push([]);
+      curX = 0;
+      continue;
+    }
+    ctx.font = `${c.b ? 700 : 400} ${size}px ${FONT.cnBold}`;
+    const w = ctx.measureText(c.ch).width;
+    if (curX + w > maxWidth && curX > 0) {
+      lines.push([]);
+      curX = 0;
+    }
+    lines[lines.length - 1].push({ ...c, w });
+    curX += w;
+  }
+  return lines;
+}
+
+export function drawRichBlock(ctx, runs, cx, topY, size, lineGap, color, maxWidth) {
+  const lines = layoutRich(ctx, runs, size, maxWidth);
+  const step = size + lineGap;
+  const left = cx - maxWidth / 2;
+  let cy = topY + size / 2;
+
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  for (const lineChars of lines) {
+    const total = lineChars.reduce((acc, c) => acc + c.w, 0);
+    let x = left + (maxWidth - total) / 2;
+    for (const c of lineChars) {
+      ctx.font = `${c.b ? 700 : 400} ${size}px ${FONT.cnBold}`;
+      ctx.fillStyle = color;
+      ctx.fillText(c.ch, x, cy);
+      x += c.w;
+    }
+    cy += step;
+  }
+  return cy;
+}
+
+export function drawRichRuns(ctx, runs, x, y, size, line, color, maxWidth) {
+  return drawRichBlock(ctx, runs, x + maxWidth / 2, y, size, size * (line - 1), color, maxWidth);
+}
+
+// ---------------------------------------------------------------- 国旗
+
+function fillFlag(ctx, x, y, w, h, nation) {
+  const band = (bx, by, bw, bh, col) => {
+    ctx.fillStyle = col;
+    ctx.fillRect(bx, by, bw, bh);
+  };
+
+  switch (nation) {
+    case "de":
+      band(x, y, w, h / 3, "#1c1c1f");
+      band(x, y + h / 3, w, h / 3, "#f4f3ee");
+      band(x, y + (h * 2) / 3, w, h / 3, "#c8202a");
+      break;
+    case "fr":
+      band(x, y, w / 3, h, "#1d3f8f");
+      band(x + w / 3, y, w / 3, h, "#f4f3ee");
+      band(x + (w * 2) / 3, y, w / 3, h, "#c8202a");
+      break;
+    case "soviet":
+      band(x, y, w, h / 3, "#f4f3ee");
+      band(x, y + h / 3, w, h / 3, "#1d4f9c");
+      band(x, y + (h * 2) / 3, w, h / 3, "#c8202a");
+      break;
+    case "uk":
+      band(x, y, w, h, "#1d3f8f");
+      ctx.strokeStyle = "#f4f3ee";
+      ctx.lineWidth = w * 0.13;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + w, y + h);
+      ctx.moveTo(x + w, y); ctx.lineTo(x, y + h);
+      ctx.stroke();
+      ctx.strokeStyle = "#c8202a";
+      ctx.lineWidth = w * 0.055;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + w, y + h);
+      ctx.moveTo(x + w, y); ctx.lineTo(x, y + h);
+      ctx.stroke();
+      ctx.strokeStyle = "#f4f3ee";
+      ctx.lineWidth = w * 0.18;
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w / 2, y + h);
+      ctx.moveTo(x, y + h / 2); ctx.lineTo(x + w, y + h / 2);
+      ctx.stroke();
+      ctx.strokeStyle = "#c8202a";
+      ctx.lineWidth = w * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w / 2, y + h);
+      ctx.moveTo(x, y + h / 2); ctx.lineTo(x + w, y + h / 2);
+      ctx.stroke();
+      break;
+    default:
+      band(x, y, w, h, "#8d8a7e");
+      break;
+  }
+}
+
+// ---------------------------------------------------------------- 稀有度形状
+// 按稀有度画 N 个形状：星 / 六边形 / 三角形 / 菱形
+const RARITY_SHAPES = {
+  r1: { shape: "star", count: 1 },
+  r2: { shape: "hexagon", count: 2 },
+  r3: { shape: "triangle", count: 3 },
+  r4: { shape: "diamond", count: 4 },
+};
+
+function drawShape(ctx, shape, cx, cy, r) {
+  ctx.beginPath();
+  switch (shape) {
+    case "star": {
+      // 五角星
+      for (let i = 0; i < 10; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI) / 5;
+        const rr = i % 2 === 0 ? r : r * 0.44;
+        const px = cx + Math.cos(ang) * rr;
+        const py = cy + Math.sin(ang) * rr;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    }
+    case "hexagon": {
+      // 正六边形（尖角朝上）
+      for (let i = 0; i < 6; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI) / 3;
+        const px = cx + Math.cos(ang) * r;
+        const py = cy + Math.sin(ang) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    }
+    case "triangle": {
+      // 正三角形（尖角朝上）
+      for (let i = 0; i < 3; i++) {
+        const ang = -Math.PI / 2 + (i * Math.PI * 2) / 3;
+        const px = cx + Math.cos(ang) * r;
+        const py = cy + Math.sin(ang) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      break;
+    }
+    case "diamond": {
+      // 菱形
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r * 0.78, cy);
+      ctx.lineTo(cx, cy + r);
+      ctx.lineTo(cx - r * 0.78, cy);
+      ctx.closePath();
+      break;
+    }
+    default:
+      return;
+  }
+  ctx.fill();
+}
+
+export function drawRarityMarks(ctx, rarityId, cx, cy, color) {
+  const def = RARITY_SHAPES[rarityId] || RARITY_SHAPES.r1;
+  const { shape, count } = def;
+
+  const r = 22;            // 形状半径
+  const gap = 8;           // 形状间距
+  const size = r * 2;
+  const rowH = size * 0.98; // 行间距（上下排）
+
+  ctx.save();
+  ctx.fillStyle = color;
+
+  if (count === 1) {
+    // 稀有度一：单个居中
+    drawShape(ctx, shape, cx, cy, r);
+  } else if (shape === "triangle" && count === 3) {
+    // 稀有度三：塔形排列（上 1 下 2）
+    drawShape(ctx, shape, cx, cy - rowH / 2, r);
+    drawShape(ctx, shape, cx - (size + gap) / 2, cy + rowH / 2, r);
+    drawShape(ctx, shape, cx + (size + gap) / 2, cy + rowH / 2, r);
+  } else if (shape === "diamond" && count === 4) {
+    // 稀有度四：两排各 2 个
+    drawShape(ctx, shape, cx - (size + gap) / 2, cy - rowH / 2, r);
+    drawShape(ctx, shape, cx + (size + gap) / 2, cy - rowH / 2, r);
+    drawShape(ctx, shape, cx - (size + gap) / 2, cy + rowH / 2, r);
+    drawShape(ctx, shape, cx + (size + gap) / 2, cy + rowH / 2, r);
+  } else {
+    // 其他：单排水平居中
+    const totalW = count * size + (count - 1) * gap;
+    let x = cx - totalW / 2 + r;
+    for (let i = 0; i < count; i++) {
+      drawShape(ctx, shape, x, cy, r);
+      x += size + gap;
+    }
+  }
+
+  ctx.restore();
+}
+
+// 盾形裁剪路径（与模板盾牌同形）
+function shieldPath(ctx, x, y, w, h) {
+  const r = w * 0.12;
+  const shoulder = y + h * 0.66;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, shoulder);
+  ctx.quadraticCurveTo(x + w, y + h * 0.88, x + w / 2, y + h);
+  ctx.quadraticCurveTo(x, y + h * 0.88, x, shoulder);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ---------------------------------------------------------------- 图片
+
+export const artworkCache = new Map();
+const templateCache = { img: null, shield: null };
+
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+export function cacheArtwork(url) {
+  if (!url || artworkCache.has(url)) return Promise.resolve();
+  return loadImage(url).then((img) => {
+    if (img) artworkCache.set(url, img);
+  });
+}
+
+// 预载卡框模板与盾牌蒙版
+export async function preloadAssets() {
+  if (!templateCache.img) {
+    templateCache.img = await loadImage(FRAME);
+  }
+  if (!templateCache.shield) {
+    templateCache.shield = await loadImage(SHIELD_MASK);
+  }
+}
+
+export function assetsReady() {
+  return !!(templateCache.img && templateCache.img.complete && templateCache.img.naturalWidth);
+}
+
+export async function loadFonts() {
+  if (typeof document === "undefined" || !document.fonts) return;
+  const defs = [
+    { family: FONT.black, url: `${A}/fonts/Roboto-Black.ttf` },
+    { family: FONT.demi, url: `${A}/fonts/FranklinGothic-DemiCond.ttf` },
+    { family: FONT.medium, url: `${A}/fonts/FranklinGothic-MediumCond.ttf` },
+    { family: FONT.stencil, url: `${A}/fonts/DDayStencil-Regular.ttf` },
+    { family: FONT.cost, url: `${A}/fonts/STHUPO.TTF` },
+    { family: FONT.cnBold, url: `${A}/fonts/STKAITI.TTF` },
+    { family: FONT.stat, url: `${A}/fonts/STLITI.TTF` },
+  ];
+  await Promise.all(
+    defs.map(async (d) => {
+      try {
+        const face = new FontFace(d.family, `url("${d.url}")`);
+        await face.load();
+        document.fonts.add(face);
+      } catch {
+        /* 缺失时回退系统字体 */
+      }
+    })
+  );
+}
+
+// ---------------------------------------------------------------- 原画
+
+function drawArtwork(ctx, r, art, mode) {
+  if (!art || !art.src) return false;
+  const img = artworkCache.get(art.src);
+  if (!img || !img.complete || !img.naturalWidth) return false;
+
+  const cfg = (mode === "mini" ? art.mini : art.main) || { x: 0, y: 0, s: 1 };
+  const s = cfg.s || 1;
+  const ox = cfg.x || 0;
+  const oy = cfg.y || 0;
+  const cover = Math.max(r.w / img.naturalWidth, r.h / img.naturalHeight) * s;
+  const dw = img.naturalWidth * cover;
+  const dh = img.naturalHeight * cover;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+  ctx.drawImage(
+    img,
+    r.x + (r.w - dw) / 2 + ox * cover,
+    r.y + (r.h - dh) / 2 + oy * cover,
+    dw,
+    dh
+  );
+  ctx.restore();
+  return true;
+}
+
+// ---------------------------------------------------------------- 主绘制
+
+function drawFace(ctx, W, H, data, ap, art, mode) {
+  data = data || {};
+  ap = ap || {};
+  const s = W / LW;
+  const L = LAYOUT;
+
+  const isOrder = data.type === "order";
+  const isUnit = !isOrder;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.scale(s, s);
+
+  // ── 1. 先铺白底（模板透明处需要白色衬底）
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, LW, LH);
+
+  // ── 2. 原画画进模板的原画窗
+  const artRect = L.art;
+  drawArtwork(ctx, artRect, art, mode);
+
+  // ── 3. 国旗：用模板自带的盾牌图作蒙版，保证形状完全一致
+  if (data.nation) {
+    const fi = L.flagInner;
+    ctx.save();
+    shieldPath(ctx, fi.x, fi.y, fi.w, fi.h);
+    ctx.clip();
+    fillFlag(ctx, fi.x, fi.y, fi.w, fi.h, data.nation);
+    ctx.restore();
+  }
+
+  // ── 4. 叠加卡框模板（透明洞处透出原画与国旗）
+  const tpl = templateCache.img;
+  if (tpl && tpl.complete && tpl.naturalWidth) {
+    ctx.drawImage(tpl, 0, 0, LW, LH);
+  }
+
+  // ── 4. 费用（模板左上费用盾内）
+  const dep = data.deployCost === null || data.deployCost === undefined ? "0" : String(data.deployCost);
+  const opStr = data.actionCost === null || data.actionCost === undefined ? "0" : String(data.actionCost);
+  const cs = L.cost;
+
+  {
+    const depSize = 34;
+    const opSize = 34;
+    const slashSize = 30;
+    const slashGap = 8;
+
+    ctx.font = `400 ${depSize}px ${FONT.cost}`;
+    const wDep = ctx.measureText(dep).width;
+    ctx.font = `400 ${opSize}px ${FONT.cost}`;
+    const wOp = ctx.measureText(opStr).width;
+    ctx.font = `400 ${slashSize}px ${FONT.cost}`;
+    const wSlash = ctx.measureText("/").width;
+
+    const total = wDep + slashGap * 2 + wSlash + wOp;
+    let px = cs.cx - total / 2;
+
+    // 部署
+    ctx.font = `400 ${depSize}px ${FONT.cost}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = ap.deployColor || C.costNum;
+    ctx.fillText(dep, px, cs.cy);
+    px += wDep + slashGap;
+
+    // 斜杠
+    ctx.font = `400 ${slashSize}px ${FONT.cost}`;
+    ctx.fillStyle = ap.actionColor || C.costOp;
+    ctx.fillText("/", px, cs.cy);
+    px += wSlash + slashGap;
+
+    // 行动
+    ctx.font = `400 ${opSize}px ${FONT.cost}`;
+    ctx.fillStyle = ap.actionColor || C.costOp;
+    ctx.fillText(opStr, px, cs.cy);
+  }
+
+  // ── 5. 卡名（模板底部深色胶囊内）
+  if (data.nameZh) {
+    const nb = L.nameBar;
+    const size = fitSize(ctx, data.nameZh, nb.w - 40, ap.nameSize || 30, 12, FONT.cnBold);
+    ctx.font = `700 ${size}px ${FONT.cnBold}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = ap.nameColor || C.nameText;
+    ctx.fillText(data.nameZh, nb.cx + (ap.nameX || 0), nb.cy + (ap.nameY || 0));
+  }
+
+  // ── 6. 攻 / 防（数值板内，隶书）
+  const statColor = ap.statColor || C.statText;
+  const OPT_X = -2;
+  const OPT_Y = -1;
+
+  if (isUnit) {
+    const pl = L.plateL;
+    const atk = String(data.attack ?? "");
+    if (atk !== "") {
+      const sz = fitSize(ctx, atk, pl.w - 20, ap.statSize || 54, 18, FONT.stat, 400);
+      ctx.font = `400 ${sz}px ${FONT.stat}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = statColor;
+      ctx.fillText(atk, pl.cx + OPT_X + (ap.statX || 0), pl.cy + OPT_Y + (ap.statY || 0));
+    }
+
+    const pr = L.plateR;
+    const def = String(data.defense ?? "");
+    if (def !== "") {
+      const sz = fitSize(ctx, def, pr.w - 20, ap.statSize || 54, 18, FONT.stat, 400);
+      ctx.font = `400 ${sz}px ${FONT.stat}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = statColor;
+      ctx.fillText(def, pr.cx + OPT_X + (ap.statX || 0), pr.cy + OPT_Y + (ap.statY || 0));
+    }
+  }
+
+  // ── 8. 稀有度形状（下层，浅灰；被词条部分遮挡）
+  //   一 → 1 五角星 | 二 → 2 六边形 | 三 → 3 三角形 | 四 → 4 菱形
+  drawRarityMarks(
+    ctx,
+    data.rarity,
+    L.keyword.cx,
+    L.rarityMarkY,
+    ap.rarityColor || C.rarityMark
+  );
+
+  // ── 8.5 词条（上层，深灰；可多选，竖排居中，压在稀有度形状上）
+  const kwList = resolveKeywords(data);
+  if (kwList.length) {
+    const k = L.keyword;
+    ctx.save();
+    ctx.globalAlpha = 0.95;
+
+    // 每个词条占一行，整块垂直居中
+    let size = ap.keywordSize || 24;
+    const lineGap = size * 0.18;
+    const maxH = k.h + 24;
+    while (size > 12) {
+      const need = kwList.length * size + (kwList.length - 1) * lineGap;
+      if (need <= maxH) break;
+      size -= 1;
+    }
+    const step = size + lineGap;
+    const blockH = kwList.length * step - lineGap;
+    let y = k.cy - blockH / 2 + size / 2;
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = ap.keywordColor || C.keywordText;
+    for (const text of kwList) {
+      const s2 = fitSize(ctx, text, k.w - 6, size, 11, FONT.cnBold);
+      ctx.font = `700 ${s2}px ${FONT.cnBold}`;
+      ctx.fillText(text, k.cx, y);
+      y += step;
+    }
+    ctx.restore();
+  }
+
+  // ── 9. 描述（卡名条下方）
+  if (data.effect) {
+    const tz = L.textZone;
+    const runs = parseRich(data.effect);
+    let size = ap.effectSize || 22;
+    const gap = size * ((ap.effectLine || 1.4) - 1);
+    while (size > 11) {
+      const lines = layoutRich(ctx, runs, size, tz.w);
+      const need = lines.length * (size + gap) - gap;
+      if (need <= tz.h) break;
+      size -= 1;
+    }
+    drawRichBlock(
+      ctx, runs,
+      tz.x + tz.w / 2 + (ap.effectX || 0),
+      tz.y + (ap.effectY || 0),
+      size, gap,
+      ap.effectColor || C.effectText,
+      tz.w
+    );
+  }
+
+  // 作者
+  if (data.author) {
+    ctx.textAlign = "right";
+    ctx.textBaseline = "alphabetic";
+    ctx.font = `400 10px ${FONT.cnBold}`;
+    ctx.fillStyle = "rgba(50,48,42,0.42)";
+    ctx.fillText(data.author, LW - 14, LH - 6);
+  }
+
+  ctx.restore();
+}
+
+export function renderMainCard(ctx, W, H, data, ap, art) {
+  drawFace(ctx, W, H, data, ap, art, "main");
+}
+
+export function renderMiniCard(ctx, W, H, data, ap, art) {
+  drawFace(ctx, W, H, data, ap, art, "mini");
+}
+
+export function loadImageToDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}

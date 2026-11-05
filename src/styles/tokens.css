@@ -1,0 +1,59 @@
+:root {
+  /* ---- 设计令牌：整页单主题(浅色),单强调色(档案纸底色 + 军绿强调) ---- */
+  /* 军绿单强调色，锁定全页一致 */
+  --accent: #2f7d4f;
+  --accent-strong: #23633d;
+  --accent-600: #2f7d4f;
+  --accent-soft: #e6efe9;
+  --accent-ink: #123b25;
+  --gold: #c9a227;
+
+  /* 中性基底：冷调档案纸，非暖米色 */
+  --bg: #eef0ec;
+  --bg-raised: #f8f9f6;
+  --surface: #ffffff;
+  --surface-2: #f2f4f0;
+  --border: #d8dcd4;
+  --border-strong: #c3c9bd;
+  --ink: #1c2420;
+  --ink-2: #57635b;
+  --ink-3: #87938a;
+
+  /* 状态色 */
+  --danger: #b23a3a;
+  --danger-soft: #f7e6e4;
+  --warn: #a87a1b;
+  --warn-soft: #f6ecd3;
+
+  /* 圆角系统：单一系，控件统一 */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 999px;
+
+  /* 阴影：tint 到背景 */
+  --shadow-1: 0 1px 2px rgba(28, 36, 32, 0.06);
+  --shadow-2: 0 6px 20px rgba(28, 36, 32, 0.08);
+  --shadow-3: 0 16px 44px rgba(28, 36, 32, 0.14);
+  --ring: 0 0 0 3px rgba(47, 125, 79, 0.22);
+
+  /* 字体 */
+  --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  --nav-h: 60px;
+  --panel-w: 400px;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
