@@ -24,23 +24,6 @@
 | 卡名 / 描述 / 词条 | 华文楷体 (STKAITI) |
 | 攻击 / 防御 | 华文隶书 (STLITI) |
 
-## 开发
-
-```bash
-pnpm install
-pnpm run dev      # http://localhost:5173
-pnpm run build    # 产物在 dist/
-pnpm run preview  # 预览生产构建
-```
-
-## 部署
-
-推送到 `master` 分支后，GitHub Actions 自动构建并部署到 GitHub Pages。
-
-仓库 Settings → Pages → Source 需选择 **GitHub Actions**。
-
-部署后访问：`https://floden-gpu.github.io/TGWDIY/`
-
 ## 目录结构
 
 ```
