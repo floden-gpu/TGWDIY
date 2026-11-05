@@ -1,0 +1,69 @@
+# TGW 卡牌 DIY 编辑器
+
+基于 React + Vite 的卡牌设计与渲染工具，使用自有卡框模板绘制卡面。
+
+## 功能
+
+- **卡面渲染**：按 500×700 逻辑坐标绘制，模板素材 + 原画 + 文字分层叠加
+- **卡牌设定**：卡牌类型（步兵）、稀有度四档、英/法/德/俄四国
+- **文本编辑**：中英文卡名、部署/行动花费、攻击/防御、词条（可多选）、特效描述
+- **词条系统**：闪袭1/闪袭2/掩护/自定义，闪袭组内互斥，卡面竖排居中
+- **稀有度标记**：一星、二六边、三三角（塔形）、四菱形（两排），压在词条下方
+- **国家配色**：卡名条随国家变色（英军绿 / 法蓝 / 德黑灰 / 俄草绿）
+- **原画调整**：上传图片、拖拽位移、滚轮缩放、跨分支复制配置
+- **多变式**：基础/老兵/抉择/三选一/开发，树状拓扑图，父子继承
+- **导出导入**：`.kdz.zip` 工程包（主卡 500×700 + 迷你卡 250×350 + 原画 + JSON）
+- **本地草稿**：localStorage 存取
+- **撤销重做**：50 步历史
+
+## 字体
+
+| 用途 | 字体 |
+|---|---|
+| 费用数字 | 华文琥珀 (STHUPO) |
+| 卡名 / 描述 / 词条 | 华文楷体 (STKAITI) |
+| 攻击 / 防御 | 华文隶书 (STLITI) |
+
+## 开发
+
+```bash
+pnpm install
+pnpm run dev      # http://localhost:5173
+pnpm run build    # 产物在 dist/
+pnpm run preview  # 预览生产构建
+```
+
+## 部署
+
+推送到 `master` 分支后，GitHub Actions 自动构建并部署到 GitHub Pages。
+
+仓库 Settings → Pages → Source 需选择 **GitHub Actions**。
+
+部署后访问：`https://floden-gpu.github.io/TGWDIY/`
+
+## 目录结构
+
+```
+src/
+├── core/
+│   ├── renderer.js      Canvas 卡面渲染引擎
+│   ├── cardModel.js     数据模型、变式树、词条解析
+│   ├── constants.js     枚举常量、国家配色
+│   ├── reducer.js       撤销重做
+│   ├── actions.js       操作生成器
+│   ├── export.js        ZIP 导出
+│   ├── import.js        ZIP 导入
+│   ├── draft.js         本地草稿
+│   └── sample.js        示例卡
+├── components/
+│   ├── CardPreview.jsx  预览（滚轮缩放、自适应）
+│   ├── ControlPanel.jsx 控制面板
+│   ├── TopBar.jsx       顶栏
+│   └── panels/          六个功能面板
+├── styles/              设计令牌与样式
+└── main.jsx             入口（预载素材后挂载）
+
+public/assets/
+├── card/   卡框模板 (frame.png, order.png, shield_blank.png)
+└── fonts/  卡面字体
+```
