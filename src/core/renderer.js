@@ -61,20 +61,21 @@ export const ORDER_LAYOUT = {
   // 灰区起点（模板原画窗下沿）
   grayTop: 497.9,
   // 费用盾：深色板 y53.4..150.7，中心 (62.9, 110.7)
-  cost: { cx: 62.9, cy: 110.7 },
-  // 国旗盾内壁（实测裁剪换算）：x397.8 y44.5 w75.8 h110.3，中心 (435.7, 99.7)
-  flagInner: { x: 397.8, y: 44.5, w: 75.8, h: 110.3 },
+  cost: { cx: 63.5, cy: 100.9 },
+  // 国旗盾：铺满整个盾形外沿（含描边内侧），由 shieldPath 裁剪成盾形
+  // 实测盾宽 x401.2..471.5（70.2），纵向 y44.5..158（约113）
+  flagInner: { x: 400.0, y: 44.0, w: 72.5, h: 115.0 },
   // 中央旗子板（模板自带图标）：中心 (252.3, 480.1)
   plateC: { x: 216.0, y: 443.7, w: 72.5, h: 72.8, cx: 252.3, cy: 480.1 },
   // 底部卡名条：x8.9 y528.1 w362.7 h52.3，中心 (190.2, 554.0)
   nameBar: { x: 8.9, y: 528.1, w: 362.7, h: 52.3, cx: 190.2, cy: 554.0 },
   // 竖分隔线：x372.8（从卡名条顶部到底边）
   dividerX: 372.8,
-  // 分隔线右侧区域：词条 + 稀有度共用
-  // 可用范围 x373..492（宽119），中心 432.5
-  keyword: { cx: 432.5, cy: 545, w: 116, h: 38 },
+  // 分隔线右侧区域（x373..492，宽119，中心 432.5）
+  // 词条居中偏上
+  keyword: { cx: 432.5, cy: 552, w: 114, h: 34 },
   // 稀有度形状：压在词条下方
-  rarityMarkY: 585,
+  rarityMarkY: 586,
   // 卡名条下方：描述文字区 x16..368（分隔线左侧）
   textZone: { x: 16, y: 592, w: 352, h: 92 },
   // 指令卡模板自带旗子图标，不再叠加兵种图标
@@ -556,7 +557,15 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
   const opStr = data.actionCost === null || data.actionCost === undefined ? "0" : String(data.actionCost);
   const cs = L.cost;
 
-  {
+  if (isOrder) {
+    // 指令卡：只有部署花费，单个数字居中在费用框正中
+    const size = fitSize(ctx, dep, cs.w || 64, 42, 18, FONT.cost, 400);
+    ctx.font = `400 ${size}px ${FONT.cost}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = ap.deployColor || C.costNum;
+    ctx.fillText(dep, cs.cx + (ap.costX || 0), cs.cy + (ap.costY || 0));
+  } else {
     const depSize = 34;
     const opSize = 34;
     const slashSize = 30;
