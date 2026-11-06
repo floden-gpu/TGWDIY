@@ -1,5 +1,5 @@
 // 卡牌数据模型的枚举常量
-// 按需求收窄：仅「步兵」一种卡牌类型，仅「英 / 法 / 德 / 俄」四国，无版本/闪卡之分。
+// 「步兵 / 指令」两类卡牌，仅「英 / 法 / 德 / 俄」四国，无版本/闪卡之分。
 
 export const NATIONS = [
   { id: "uk", name: "英国", symbol: "🇬🇧" },
@@ -12,6 +12,7 @@ export const NATIONS = [
 export const UNIT_TYPES = ["infantry"];
 export const CARD_TYPES = [
   { id: "infantry", label: "步兵", family: "unit" },
+  { id: "order", label: "指令", family: "order" },
 ];
 
 // 稀有度：用形状标记区分（显示在词条下方）

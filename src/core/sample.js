@@ -38,6 +38,29 @@ export function createSampleCard() {
   });
   card.variants.push(vet);
 
+  // 指令变式
+  const order = createVariantNode({
+    id: `${card.id}-order`,
+    label: "指令形态",
+    kind: "choice",
+    parentId: card.variants[0].id,
+    data: {
+      ...defaultCardData(),
+      nameZh: "集中炮火",
+      nameEn: "Concentrated Fire",
+      type: "order",
+      nation: "fr",
+      deployCost: 3,
+      actionCost: 0,
+      attack: null,
+      defense: null,
+      keywordIds: ["blitz1"],
+      keywords: "",
+      effect: "对一个目标单位造成 3 点伤害。",
+    },
+  });
+  card.variants.push(order);
+
   card.activeVariantId = card.variants[0].id;
   return card;
 }

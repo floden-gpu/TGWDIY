@@ -21,6 +21,8 @@ const A = "./assets";
 // ---------------------------------------------------------------- 素材
 // 单位卡（步兵）模板
 const FRAME_UNIT = `${A}/card/frame.png`;
+// 指令卡模板（1296x1808）
+const FRAME_ORDER = `${A}/card/order.png`;
 // 模板自带的盾牌图（备用的国旗裁剪蒙版）
 const SHIELD_MASK = `${A}/card/shield_blank.png`;
 
@@ -49,6 +51,34 @@ export const LAYOUT = {
   rarityMarkY: 616,
   // 卡名条下方：描述文字区
   textZone: { x: 14, y: 604, w: 356, h: 84 },
+};
+
+// ---------------------------------------------------------------- 指令卡版式
+// 全部由 order.png（1296x1808）逐像素实测换算到 500x700
+export const ORDER_LAYOUT = {
+  // 原画窗：x8.1 y46.8 w484.6 h456.1
+  art: { x: 8.1, y: 46.8, w: 484.6, h: 456.1 },
+  // 灰区起点（模板原画窗下沿）
+  grayTop: 497.9,
+  // 费用盾：深色板 y53.4..150.7，中心 (62.9, 110.7)
+  cost: { cx: 62.9, cy: 110.7 },
+  // 国旗盾内壁（实测裁剪换算）：x397.8 y44.5 w75.8 h110.3，中心 (435.7, 99.7)
+  flagInner: { x: 397.8, y: 44.5, w: 75.8, h: 110.3 },
+  // 中央旗子板（模板自带图标）：中心 (252.3, 480.1)
+  plateC: { x: 216.0, y: 443.7, w: 72.5, h: 72.8, cx: 252.3, cy: 480.1 },
+  // 底部卡名条：x8.9 y528.1 w362.7 h52.3，中心 (190.2, 554.0)
+  nameBar: { x: 8.9, y: 528.1, w: 362.7, h: 52.3, cx: 190.2, cy: 554.0 },
+  // 竖分隔线：x372.8（从卡名条顶部到底边）
+  dividerX: 372.8,
+  // 分隔线右侧区域：词条 + 稀有度共用
+  // 可用范围 x373..492（宽119），中心 432.5
+  keyword: { cx: 432.5, cy: 545, w: 116, h: 38 },
+  // 稀有度形状：压在词条下方
+  rarityMarkY: 585,
+  // 卡名条下方：描述文字区 x16..368（分隔线左侧）
+  textZone: { x: 16, y: 592, w: 352, h: 92 },
+  // 指令卡模板自带旗子图标，不再叠加兵种图标
+  hasBuiltinIcon: true,
 };
 
 const C = {
@@ -229,6 +259,46 @@ function fillFlag(ctx, x, y, w, h, nation) {
   }
 }
 
+// ---------------------------------------------------------------- 兵种图标
+
+// 步兵钢盔（模板中央图标同形）
+function typeIcon(ctx, cx, cy, s, type, color) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // 目前只有步兵
+  const top = cy - s * 0.26;
+  const bellY = cy + s * 0.10;
+  const brimY = cy + s * 0.22;
+  const w = s * 0.52;
+
+  ctx.beginPath();
+  ctx.moveTo(cx - w * 1.02, brimY + s * 0.02);
+  ctx.quadraticCurveTo(cx - w * 1.0, bellY + s * 0.04, cx - w * 0.92, bellY);
+  ctx.quadraticCurveTo(cx - w * 0.86, top + s * 0.12, cx - w * 0.56, top + s * 0.03);
+  ctx.quadraticCurveTo(cx, top - s * 0.06, cx + w * 0.56, top + s * 0.03);
+  ctx.quadraticCurveTo(cx + w * 0.86, top + s * 0.12, cx + w * 0.92, bellY);
+  ctx.quadraticCurveTo(cx + w * 1.0, bellY + s * 0.04, cx + w * 1.02, brimY + s * 0.02);
+  ctx.quadraticCurveTo(cx, brimY + s * 0.09, cx - w * 1.02, brimY + s * 0.02);
+  ctx.closePath();
+  ctx.fill();
+
+  // 帽檐分层暗线
+  ctx.globalAlpha = 0.25;
+  ctx.beginPath();
+  ctx.moveTo(cx - w * 0.78, brimY - s * 0.05);
+  ctx.quadraticCurveTo(cx, brimY + s * 0.03, cx + w * 0.78, brimY - s * 0.05);
+  ctx.lineWidth = s * 0.05;
+  ctx.strokeStyle = "#000";
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
 // ---------------------------------------------------------------- 稀有度形状
 // 按稀有度画 N 个形状：星 / 六边形 / 三角形 / 菱形
 const RARITY_SHAPES = {
@@ -351,8 +421,8 @@ function shieldPath(ctx, x, y, w, h) {
 // ---------------------------------------------------------------- 图片
 
 export const artworkCache = new Map();
-// 模板缓存：unit（步兵）
-const templateCache = { unit: null, shield: null };
+// 模板缓存：unit（步兵）/ order（指令）
+const templateCache = { unit: null, order: null, shield: null };
 
 function loadImage(src) {
   return new Promise((resolve) => {
@@ -374,6 +444,7 @@ export function cacheArtwork(url) {
 export async function preloadAssets() {
   const jobs = [];
   if (!templateCache.unit) jobs.push(loadImage(FRAME_UNIT).then((i) => { templateCache.unit = i || false; }));
+  if (!templateCache.order) jobs.push(loadImage(FRAME_ORDER).then((i) => { templateCache.order = i || false; }));
   if (!templateCache.shield) jobs.push(loadImage(SHIELD_MASK).then((i) => { templateCache.shield = i || false; }));
   await Promise.all(jobs);
 }
@@ -446,7 +517,12 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
   data = data || {};
   ap = ap || {};
   const s = W / LW;
-  const L = LAYOUT;
+
+  const isOrder = data.type === "order";
+  const isUnit = !isOrder;
+  // 按卡牌类型选择版式与模板
+  const L = isOrder ? ORDER_LAYOUT : LAYOUT;
+  const tpl = isOrder ? templateCache.order : templateCache.unit;
 
   ctx.clearRect(0, 0, W, H);
   ctx.save();
@@ -471,7 +547,6 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
   }
 
   // ── 4. 叠加卡框模板（透明洞处透出原画与国旗）
-  const tpl = templateCache.unit;
   if (tpl && tpl.complete && tpl.naturalWidth) {
     ctx.drawImage(tpl, 0, 0, LW, LH);
   }
@@ -529,12 +604,12 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
     ctx.fillText(data.nameZh, nb.cx + (ap.nameX || 0), nb.cy + (ap.nameY || 0));
   }
 
-  // ── 6. 攻 / 防（数值板内，隶书）
+  // ── 6. 攻 / 防（数值板内，隶书）；指令卡无数值
   const statColor = ap.statColor || C.statText;
   const OPT_X = -2;
   const OPT_Y = -1;
 
-  {
+  if (isUnit) {
     const pl = L.plateL;
     const atk = String(data.attack ?? "");
     if (atk !== "") {
@@ -556,6 +631,19 @@ function drawFace(ctx, W, H, data, ap, art, mode) {
       ctx.fillStyle = statColor;
       ctx.fillText(def, pr.cx + OPT_X + (ap.statX || 0), pr.cy + OPT_Y + (ap.statY || 0));
     }
+  }
+
+  // ── 6.5 中央兵种图标（仅单位卡；指令卡模板自带旗子图标）
+  if (isUnit) {
+    const pc = L.plateC;
+    typeIcon(
+      ctx,
+      pc.x + pc.w / 2 + (ap.iconX || 0),
+      pc.y + pc.h / 2 + (ap.iconY || 0),
+      46 * (1 + (ap.iconScale || 0)),
+      data.type,
+      ap.iconColor || C.statText
+    );
   }
 
   // ── 8. 稀有度形状（下层，浅灰；被词条部分遮挡）
